@@ -40,20 +40,31 @@ supabase/
 
 ## 1. Supabase setup
 
-```bash
-# Link to your hosted project and push the schema:
-supabase link --project-ref <your-project-ref>
-supabase db push                       # applies supabase/migrations/0001_init.sql
+> **Already provisioned.** This repo is connected to the hosted project
+> `note_app_mobile` (ref `pratilkmeiwfjaoyorxc`). Both migrations are applied,
+> the `note-images` bucket + policies exist, and the `capture-page` Edge
+> Function is deployed. `.env` is filled in with the project URL and key.
 
-# Deploy the Edge Function and set its secrets:
-supabase functions deploy capture-page
+The only remaining step is to set the Edge Function secrets (the OCR and
+AI keys) — these are not set yet, so `capture-page` will error until they are:
+
+```bash
 supabase secrets set \
   GOOGLE_VISION_API_KEY=<key> \
-  ANTHROPIC_API_KEY=<key>
+  ANTHROPIC_API_KEY=<key> \
+  --project-ref pratilkmeiwfjaoyorxc
 ```
 
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected into the function
-automatically — don't set them by hand.
+(or via Dashboard → Edge Functions → Manage secrets). `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY` are injected automatically — don't set them.
+
+To reproduce the backend from scratch on another project:
+
+```bash
+supabase link --project-ref <ref>
+supabase db push          # applies supabase/migrations/*.sql in order
+supabase functions deploy capture-page
+```
 
 The migration creates the private `note-images` bucket and per-user storage
 policies, so no manual bucket setup is needed.
