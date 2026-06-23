@@ -48,21 +48,27 @@ supabase/
 The only remaining step is to set the Edge Function secrets:
 
 ```bash
-supabase secrets set \
-  GOOGLE_VISION_API_KEY=<key> \      # required — OCR
-  ANTHROPIC_API_KEY=<key> \          # OPTIONAL — AI page-seam repair
+# Required — service-account JSON for Vision OCR (paste the whole key file):
+supabase secrets set GOOGLE_SERVICE_ACCOUNT_JSON="$(cat service-account.json)" \
   --project-ref pratilkmeiwfjaoyorxc
+
+# Optional — AI page-seam repair on appends:
+supabase secrets set ANTHROPIC_API_KEY=<key> --project-ref pratilkmeiwfjaoyorxc
 ```
 
 (or via Dashboard → Edge Functions → Manage secrets). `SUPABASE_URL` and
 `SUPABASE_SERVICE_ROLE_KEY` are injected automatically — don't set them.
 
-- **`GOOGLE_VISION_API_KEY` is required** — it does all OCR. Until it's set,
-  capturing a page uploads the image and creates the note but the text never
-  populates.
+- **`GOOGLE_SERVICE_ACCOUNT_JSON` is required** — the full JSON key for a
+  service account that can call the Cloud Vision API. The function mints a
+  short-lived Bearer token from it (signed-JWT grant) and calls Vision. Used
+  instead of a plain API key because API-key creation is disabled by org
+  policy on the project's Google account. The service account needs Vision
+  access (project role "Cloud Vision AI Service Agent" or `roles/serviceusage`
+  + Vision enabled), and **Cloud Vision API must be enabled** on the project.
 - **`ANTHROPIC_API_KEY` is optional.** With it, appended pages are AI-stitched
-  at the seam (split sentences/words rejoined). Without it, OCR still works
-  fully; additional pages are simply joined onto the note on a new line.
+  at the seam. Without it, OCR still works fully; extra pages are joined onto
+  the note on a new line.
 
 To reproduce the backend from scratch on another project:
 

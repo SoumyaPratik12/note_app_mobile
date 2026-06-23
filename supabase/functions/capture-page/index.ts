@@ -2,15 +2,18 @@
 // with the previous page (for appends), updates the note, and notifies the
 // user when done.
 //
-// Deploy:   supabase functions deploy capture-page
-// Secrets:  supabase secrets set GOOGLE_VISION_API_KEY=... ANTHROPIC_API_KEY=...
-//           (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected by the runtime)
+// Secrets:
+//   GOOGLE_SERVICE_ACCOUNT_JSON  (required) — full service-account key JSON;
+//                                 used to mint a Bearer token for Vision.
+//   ANTHROPIC_API_KEY            (optional) — AI page-seam repair on appends.
+//   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are injected by the runtime.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 import Anthropic from 'npm:@anthropic-ai/sdk@0.65.0';
 
-const JUNCTION_WINDOW = 300; // chars of overlap we ask Claude to stitch
+const JUNCTION_WINDOW = 300;
+const VISION_SCOPE = 'https://www.googleapis.com/auth/cloud-vision';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,6 +24,12 @@ interface CapturePageBody {
   note_id: string;
   storage_path: string;
   is_new_note: boolean;
+}
+
+interface ServiceAccount {
+  client_email: string;
+  private_key: string;
+  token_uri?: string;
 }
 
 Deno.serve(async (req) => {
@@ -34,11 +43,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-    // Service-role client for DB/storage work inside the function.
     const admin = createClient(supabaseUrl, serviceKey);
 
-    // Identify the caller from their JWT (forwarded by supabase.functions.invoke).
     const authHeader = req.headers.get('Authorization') ?? '';
     const jwt = authHeader.replace('Bearer ', '');
     const {
@@ -57,8 +63,9 @@ Deno.serve(async (req) => {
     }
     const imageBase64 = encodeBase64(await blob.arrayBuffer());
 
-    // 2. OCR via Google Cloud Vision.
-    const { rawText, avgConfidence } = await runVision(imageBase64);
+    // 2. OCR via Google Cloud Vision (service-account Bearer auth).
+    const accessToken = await getGoogleAccessToken();
+    const { rawText, avgConfidence } = await runVision(accessToken, imageBase64);
     const cleanText = postProcessOCR(rawText);
 
     // 3. Current note state.
@@ -73,10 +80,8 @@ Deno.serve(async (req) => {
 
     const newPageNumber = (note.page_count ?? 0) + 1;
 
-    // 4. Stitch the new page onto the existing content.
-    // The Anthropic key is OPTIONAL: when present we AI-repair the seam between
-    // pages; when absent we fall back to a plain newline join. OCR (Google
-    // Vision) is unaffected either way.
+    // 4. Stitch the new page onto the existing content. The Anthropic key is
+    // OPTIONAL: with it we AI-repair the seam; without it we newline-join.
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
     let finalText = cleanText;
     let repairedJunction: string | null = null;
@@ -93,7 +98,6 @@ Deno.serve(async (req) => {
           repairedJunction +
           cleanText.slice(JUNCTION_WINDOW);
       } else {
-        // No AI key — append the page on a new line, no seam repair.
         finalText = `${note.content}\n${cleanText}`;
       }
     } else if (note.content) {
@@ -154,25 +158,92 @@ function json(body: unknown, status: number): Response {
   });
 }
 
+function base64url(bytes: Uint8Array): string {
+  return encodeBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Mints a short-lived OAuth2 access token for Vision from the service-account
+// JSON, via the signed-JWT bearer grant.
+async function getGoogleAccessToken(): Promise<string> {
+  const raw = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON');
+  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not set');
+  const sa = JSON.parse(raw) as ServiceAccount;
+  const tokenUri = sa.token_uri ?? 'https://oauth2.googleapis.com/token';
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64url(
+    new TextEncoder().encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })),
+  );
+  const claims = base64url(
+    new TextEncoder().encode(
+      JSON.stringify({
+        iss: sa.client_email,
+        scope: VISION_SCOPE,
+        aud: tokenUri,
+        iat: now,
+        exp: now + 3600,
+      }),
+    ),
+  );
+  const unsigned = `${header}.${claims}`;
+
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    pemToDer(sa.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sigBytes = new Uint8Array(
+    await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned)),
+  );
+  const assertion = `${unsigned}.${base64url(sigBytes)}`;
+
+  const res = await fetch(tokenUri, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`token exchange failed: ${res.status} ${await res.text()}`);
+  }
+  const data = await res.json();
+  return data.access_token as string;
+}
+
+function pemToDer(pem: string): Uint8Array {
+  const body = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(/\s+/g, '');
+  const binary = atob(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 async function runVision(
+  accessToken: string,
   imageBase64: string,
 ): Promise<{ rawText: string; avgConfidence: number }> {
-  const apiKey = Deno.env.get('GOOGLE_VISION_API_KEY')!;
-  const res = await fetch(
-    `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: [
-          {
-            image: { content: imageBase64 },
-            features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
-          },
-        ],
-      }),
+  const res = await fetch('https://vision.googleapis.com/v1/images:annotate', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
     },
-  );
+    body: JSON.stringify({
+      requests: [
+        {
+          image: { content: imageBase64 },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+        },
+      ],
+    }),
+  });
 
   if (!res.ok) {
     throw new Error(`Vision API error: ${res.status} ${await res.text()}`);
@@ -182,7 +253,6 @@ async function runVision(
   const annotation = data.responses?.[0]?.fullTextAnnotation;
   const rawText: string = annotation?.text ?? '';
 
-  // Average word-level confidence across the page.
   const confidences: number[] = [];
   for (const page of annotation?.pages ?? []) {
     for (const block of page.blocks ?? []) {
@@ -202,8 +272,8 @@ async function runVision(
 
 function postProcessOCR(text: string): string {
   return text
-    .replace(/[ \t]+\n/g, '\n') // trim trailing whitespace per line
-    .replace(/\n{3,}/g, '\n\n') // collapse excessive blank lines
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -233,7 +303,6 @@ async function repairJunction(
   });
 
   const block = message.content.find((b) => b.type === 'text');
-  // Fall back to a plain concatenation if the model returns nothing usable.
   return block && block.type === 'text' ? block.text : `${tail}${head}`;
 }
 
@@ -260,7 +329,5 @@ async function sendPush(
       body,
       sound: 'default',
     }),
-  }).catch(() => {
-    // Push is best-effort; never fail the request on a notification error.
-  });
+  }).catch(() => {});
 }
