@@ -45,18 +45,24 @@ supabase/
 > the `note-images` bucket + policies exist, and the `capture-page` Edge
 > Function is deployed. `.env` is filled in with the project URL and key.
 
-The only remaining step is to set the Edge Function secrets (the OCR and
-AI keys) — these are not set yet, so `capture-page` will error until they are:
+The only remaining step is to set the Edge Function secrets:
 
 ```bash
 supabase secrets set \
-  GOOGLE_VISION_API_KEY=<key> \
-  ANTHROPIC_API_KEY=<key> \
+  GOOGLE_VISION_API_KEY=<key> \      # required — OCR
+  ANTHROPIC_API_KEY=<key> \          # OPTIONAL — AI page-seam repair
   --project-ref pratilkmeiwfjaoyorxc
 ```
 
 (or via Dashboard → Edge Functions → Manage secrets). `SUPABASE_URL` and
 `SUPABASE_SERVICE_ROLE_KEY` are injected automatically — don't set them.
+
+- **`GOOGLE_VISION_API_KEY` is required** — it does all OCR. Until it's set,
+  capturing a page uploads the image and creates the note but the text never
+  populates.
+- **`ANTHROPIC_API_KEY` is optional.** With it, appended pages are AI-stitched
+  at the seam (split sentences/words rejoined). Without it, OCR still works
+  fully; additional pages are simply joined onto the note on a new line.
 
 To reproduce the backend from scratch on another project:
 

@@ -74,19 +74,28 @@ Deno.serve(async (req) => {
     const newPageNumber = (note.page_count ?? 0) + 1;
 
     // 4. Stitch the new page onto the existing content.
+    // The Anthropic key is OPTIONAL: when present we AI-repair the seam between
+    // pages; when absent we fall back to a plain newline join. OCR (Google
+    // Vision) is unaffected either way.
+    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
     let finalText = cleanText;
     let repairedJunction: string | null = null;
     let originalTail: string | null = null;
     let originalHead: string | null = null;
 
     if (!is_new_note && note.content) {
-      originalTail = note.content.slice(-JUNCTION_WINDOW);
-      originalHead = cleanText.slice(0, JUNCTION_WINDOW);
-      repairedJunction = await repairJunction(originalTail, originalHead);
-      finalText =
-        note.content.slice(0, -JUNCTION_WINDOW) +
-        repairedJunction +
-        cleanText.slice(JUNCTION_WINDOW);
+      if (anthropicKey) {
+        originalTail = note.content.slice(-JUNCTION_WINDOW);
+        originalHead = cleanText.slice(0, JUNCTION_WINDOW);
+        repairedJunction = await repairJunction(anthropicKey, originalTail, originalHead);
+        finalText =
+          note.content.slice(0, -JUNCTION_WINDOW) +
+          repairedJunction +
+          cleanText.slice(JUNCTION_WINDOW);
+      } else {
+        // No AI key — append the page on a new line, no seam repair.
+        finalText = `${note.content}\n${cleanText}`;
+      }
     } else if (note.content) {
       finalText = `${note.content}\n\n${cleanText}`;
     }
@@ -198,8 +207,12 @@ function postProcessOCR(text: string): string {
     .trim();
 }
 
-async function repairJunction(tail: string, head: string): Promise<string> {
-  const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
+async function repairJunction(
+  apiKey: string,
+  tail: string,
+  head: string,
+): Promise<string> {
+  const anthropic = new Anthropic({ apiKey });
 
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
