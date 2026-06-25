@@ -1,7 +1,8 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -31,11 +32,24 @@ export function CaptureCamera({
 }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [flash, setFlash] = useState<'off' | 'on'>('off');
+  const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
+  // Ask for permission automatically the first time the screen opens.
+  useEffect(() => {
+    if (permission && !permission.granted && permission.canAskAgain) {
+      requestPermission();
+    }
+  }, [permission, requestPermission]);
+
   if (!permission) {
-    return <View style={styles.container} />;
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator color="#fff" />
+      </View>
+    );
   }
 
   if (!permission.granted) {
@@ -55,16 +69,23 @@ export function CaptureCamera({
   }
 
   async function capture() {
-    if (busy || !cameraRef.current) return;
+    if (busy || !ready || !cameraRef.current) return;
     setBusy(true);
     try {
       const photo = await cameraRef.current.takePictureAsync({
         base64: true,
-        quality: 0.7,
+        quality: 0.6,
+        skipProcessing: false,
       });
-      if (photo?.base64) {
-        await onCapture(photo.base64);
+      if (!photo?.base64) {
+        throw new Error('No image data returned from the camera.');
       }
+      await onCapture(photo.base64);
+      // Brief success confirmation so the capture is visibly acknowledged.
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1500);
+    } catch (e) {
+      Alert.alert('Capture failed', (e as Error).message || 'Unknown error.');
     } finally {
       setBusy(false);
     }
@@ -72,11 +93,17 @@ export function CaptureCamera({
 
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} flash={flash} />
+      <CameraView
+        ref={cameraRef}
+        style={StyleSheet.absoluteFill}
+        facing="back"
+        flash={flash}
+        onCameraReady={() => setReady(true)}
+      />
       <CaptureGuideOverlay />
 
       <View style={styles.topBar}>
-        <Pressable onPress={onClose} hitSlop={12}>
+        <Pressable onPress={onClose} hitSlop={12} disabled={busy}>
           <Text style={styles.close}>✕</Text>
         </Pressable>
       </View>
@@ -90,26 +117,44 @@ export function CaptureCamera({
         </View>
       ) : null}
 
+      {/* Processing / success overlay — gives feedback during upload + OCR. */}
+      {busy ? (
+        <View style={styles.processing} pointerEvents="auto">
+          <ActivityIndicator color="#fff" size="large" />
+          <Text style={styles.processingText}>Reading your page…</Text>
+        </View>
+      ) : null}
+      {savedFlash && !busy ? (
+        <View style={styles.processing} pointerEvents="none">
+          <Text style={styles.savedText}>✓ Page added</Text>
+        </View>
+      ) : null}
+
       <View style={styles.bottomBar}>
         {secondaryActionLabel ? (
-          <Pressable onPress={onSecondaryAction} style={styles.secondary}>
+          <Pressable onPress={onSecondaryAction} style={styles.secondary} disabled={busy}>
             <Text style={styles.secondaryText}>{secondaryActionLabel}</Text>
           </Pressable>
         ) : (
           <View style={styles.secondary} />
         )}
 
-        <Pressable style={styles.shutter} onPress={capture} disabled={busy}>
+        <Pressable
+          style={[styles.shutter, (!ready || busy) && styles.shutterDisabled]}
+          onPress={capture}
+          disabled={busy || !ready}
+        >
           {busy ? (
             <ActivityIndicator color="#111" />
           ) : (
-            <Text style={styles.shutterText}>Capture</Text>
+            <Text style={styles.shutterText}>{ready ? 'Capture' : 'Starting…'}</Text>
           )}
         </Pressable>
 
         <Pressable
           onPress={() => setFlash((f) => (f === 'off' ? 'on' : 'off'))}
           style={styles.secondary}
+          disabled={busy}
         >
           <Text style={styles.secondaryText}>Flash: {flash === 'off' ? 'Off' : 'On'}</Text>
         </Pressable>
@@ -144,6 +189,15 @@ const styles = StyleSheet.create({
   },
   bannerTitle: { color: '#fff', fontWeight: '700', fontSize: 15 },
   bannerSubtitle: { color: '#d6e4ff', marginTop: 2, fontSize: 13 },
+  processing: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  processingText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  savedText: { color: '#fff', fontSize: 20, fontWeight: '800' },
   bottomBar: {
     position: 'absolute',
     bottom: 48,
@@ -162,6 +216,7 @@ const styles = StyleSheet.create({
     minWidth: 120,
     alignItems: 'center',
   },
+  shutterDisabled: { opacity: 0.5 },
   shutterText: { color: '#111', fontWeight: '700', fontSize: 16 },
   secondary: { width: 90 },
   secondaryText: { color: '#fff', fontSize: 13 },
