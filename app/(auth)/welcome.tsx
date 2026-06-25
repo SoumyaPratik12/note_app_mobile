@@ -29,23 +29,37 @@ export default function WelcomeScreen() {
   }
 
   async function signIn() {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Required Fields', 'Please enter both email and password.');
+      return;
+    }
     setBusy(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ 
+      email: email.trim(), 
+      password: password.trim() 
+    });
     setBusy(false);
     if (error) Alert.alert('Sign in failed', error.message);
     // On success, the auth listener in the root layout redirects to /home.
   }
 
   async function createAccount() {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Required Fields', 'Please enter both email and password.');
+      return;
+    }
     setBusy(true);
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { error } = await supabase.auth.signUp({ 
+      email: email.trim(), 
+      password: password.trim() 
+    });
     setBusy(false);
     if (error) {
       Alert.alert('Sign up failed', error.message);
       return;
     }
     // Supabase sends a confirmation OTP/email; collect the code on /verify-email.
-    router.push({ pathname: '/(auth)/verify-email', params: { email } });
+    router.push({ pathname: '/(auth)/verify-email', params: { email: email.trim() } });
   }
 
   return (
