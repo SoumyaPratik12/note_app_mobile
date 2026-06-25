@@ -1,0 +1,30 @@
+{
+  "cli": {
+    "version": ">= 3.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pratilkmeiwfjaoyorxc.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByYXRpbGttZWl3Zmphb3lvcnhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyMDg4NzgsImV4cCI6MjA5Nzc4NDg3OH0.D4vUWgDvrRmsFAmsv3j8dY0AFtprQh_zMkGs24m-P5o"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pratilkmeiwfjaoyorxc.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByYXRpbGttZWl3Zmphb3lvcnhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyMDg4NzgsImV4cCI6MjA5Nzc4NDg3OH0.D4vUWgDvrRmsFAmsv3j8dY0AFtprQh_zMkGs24m-P5o"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

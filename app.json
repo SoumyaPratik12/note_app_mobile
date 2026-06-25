@@ -16,7 +16,11 @@
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
-      "permissions": ["CAMERA"]
+      "permissions": [
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -26,14 +30,22 @@
           "cameraPermission": "InkSync uses the camera to photograph your handwritten notes."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "supabaseUrl": "",
-      "supabaseAnonKey": ""
-    }
+      "supabaseAnonKey": "",
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "8185c6e6-3e56-4453-8c9e-0b35511478c6"
+      }
+    },
+    "owner": "samm123"
   }
 }
