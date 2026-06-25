@@ -48,9 +48,14 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.appName}>InkSync</Text>
-        <Pressable onPress={() => router.push('/search')} hitSlop={12}>
-          <Text style={styles.search}>Search 🔍</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable onPress={() => router.push('/search')} hitSlop={12}>
+            <Text style={styles.search}>Search 🔍</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push('/settings')} hitSlop={12}>
+            <Text style={styles.settingsIcon}>⚙️</Text>
+          </Pressable>
+        </View>
       </View>
 
       <FlatList
@@ -94,6 +99,14 @@ const styles = StyleSheet.create({
   },
   appName: { fontSize: 22, fontWeight: '800', color: '#111' },
   search: { fontSize: 15, color: '#2563eb', fontWeight: '600' },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  settingsIcon: {
+    fontSize: 22,
+  },
   list: { paddingHorizontal: 16, paddingBottom: 120 },
   sectionTitle: { fontSize: 13, fontWeight: '600', color: '#999', marginBottom: 10 },
   empty: { textAlign: 'center', color: '#999', marginTop: 40, paddingHorizontal: 20 },

@@ -27,6 +27,7 @@ export default function NoteScreen() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [titleDraft, setTitleDraft] = useState('');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -42,6 +43,7 @@ export default function NoteScreen() {
     if (noteRes.data) {
       setNote(noteRes.data as Note);
       setDraft((noteRes.data as Note).content);
+      setTitleDraft((noteRes.data as Note).title || '');
     }
     setPages((pagesRes.data as NotePage[]) ?? []);
     setLoading(false);
@@ -57,14 +59,41 @@ export default function NoteScreen() {
     if (!id) return;
     const { error } = await supabase
       .from('notes')
-      .update({ content: draft, updated_at: new Date().toISOString() })
+      .update({ 
+        title: titleDraft.trim() || 'Untitled note', 
+        content: draft, 
+        updated_at: new Date().toISOString() 
+      })
       .eq('id', id);
     if (error) {
       Alert.alert('Save failed', error.message);
       return;
     }
-    setNote((n) => (n ? { ...n, content: draft } : n));
+    setNote((n) => (n ? { ...n, title: titleDraft.trim() || 'Untitled note', content: draft } : n));
     setEditing(false);
+  }
+
+  async function handleDelete() {
+    if (!id) return;
+    Alert.alert(
+      'Delete Note',
+      'Are you sure you want to permanently delete this note?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('notes').delete().eq('id', id);
+            if (error) {
+              Alert.alert('Delete failed', error.message);
+              return;
+            }
+            router.replace('/home');
+          },
+        },
+      ],
+    );
   }
 
   async function seal() {
@@ -102,6 +131,9 @@ export default function NoteScreen() {
             {isOpen ? 'Open' : 'Completed'}
           </Text>
         </View>
+        <Pressable onPress={handleDelete} hitSlop={12}>
+          <Text style={styles.deleteText}>Delete 🗑️</Text>
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.body}>
@@ -110,14 +142,23 @@ export default function NoteScreen() {
         <View style={styles.divider} />
 
         {editing ? (
-          <TextInput
-            style={styles.editor}
-            multiline
-            value={draft}
-            onChangeText={setDraft}
-            autoFocus
-            textAlignVertical="top"
-          />
+          <View style={styles.editContainer}>
+            <Text style={styles.editLabel}>Note Title</Text>
+            <TextInput
+              style={styles.titleInput}
+              value={titleDraft}
+              onChangeText={setTitleDraft}
+              placeholder="Untitled note"
+            />
+            <Text style={styles.editLabel}>Content</Text>
+            <TextInput
+              style={styles.editor}
+              multiline
+              value={draft}
+              onChangeText={setDraft}
+              textAlignVertical="top"
+            />
+          </View>
         ) : (
           <ConfidenceHighlight content={note.content} pages={pages} />
         )}
@@ -169,6 +210,31 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
   },
   back: { fontSize: 24, color: '#111' },
+  deleteText: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  editContainer: {
+    gap: 8,
+  },
+  editLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#888',
+    textTransform: 'uppercase',
+    marginTop: 8,
+  },
+  titleInput: {
+    fontSize: 16,
+    color: '#111',
+    fontWeight: '600',
+    borderWidth: 1,
+    borderColor: '#e2e2e2',
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: '#f9f9fb',
+  },
   headerText: { flex: 1 },
   title: { fontSize: 18, fontWeight: '700', color: '#111' },
   meta: { fontSize: 13, color: '#888', marginTop: 2 },
