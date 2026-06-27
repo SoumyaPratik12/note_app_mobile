@@ -1,41 +1,68 @@
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNoteStore } from '@/stores/noteStore';
+import { useThemeStore, themeColors } from '@/stores/themeStore';
 import { relativeTime } from '@/lib/time';
 
-/**
- * Sits at the top of Home and only renders when a note is open. "Continue"
- * jumps straight to the camera for that note; "Mark Done" seals it without
- * opening the camera.
- */
 export function OpenNoteBanner() {
   const router = useRouter();
   const openNote = useNoteStore((s) => s.openNote);
   const markDone = useNoteStore((s) => s.markDone);
+  const theme = useThemeStore((s) => s.theme);
+  const colors = themeColors[theme];
+
+  const pulseAnim = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    if (openNote) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 900,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 0.4,
+            duration: 900,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    }
+  }, [openNote, pulseAnim]);
 
   if (!openNote) return null;
 
   return (
-    <View style={styles.banner}>
-      <Text style={styles.title} numberOfLines={1}>
-        📝 {openNote.title?.trim() || 'Untitled note'}
+    <View style={[styles.banner, { backgroundColor: colors.accentSoft }]}>
+      {/* Pulse Status */}
+      <View style={styles.statusRow}>
+        <Animated.View style={[styles.dot, { backgroundColor: colors.accent, opacity: pulseAnim }]} />
+        <Text style={[styles.statusText, { color: colors.accent }]}>In progress</Text>
+      </View>
+
+      <Text style={[styles.title, { color: colors.ink }]} numberOfLines={1}>
+        {openNote.title?.trim() || 'Untitled note'}
       </Text>
-      <Text style={styles.meta}>
+      <Text style={[styles.meta, { color: colors.ink2 }]}>
         {openNote.page_count} {openNote.page_count === 1 ? 'page' : 'pages'} ·{' '}
         {relativeTime(openNote.updated_at)}
       </Text>
+
       <View style={styles.actions}>
         <Pressable
-          style={[styles.button, styles.primary]}
+          style={[styles.button, { backgroundColor: colors.accent }]}
           onPress={() => router.push(`/capture/${openNote.id}`)}
         >
-          <Text style={styles.primaryText}>Continue</Text>
+          <Text style={[styles.primaryText, { color: colors.accentInk }]}>Continue</Text>
         </Pressable>
         <Pressable
-          style={[styles.button, styles.secondary]}
+          style={[styles.button, styles.secondary, { borderColor: colors.accent }]}
           onPress={() => markDone(openNote.id)}
         >
-          <Text style={styles.secondaryText}>Mark Done</Text>
+          <Text style={[styles.secondaryText, { color: colors.accent }]}>Mark Done</Text>
         </Pressable>
       </View>
     </View>
@@ -44,19 +71,61 @@ export function OpenNoteBanner() {
 
 const styles = StyleSheet.create({
   banner: {
-    backgroundColor: '#eef4ff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#c9dcff',
+    borderRadius: 20,
+    padding: 17,
+    marginBottom: 22,
   },
-  title: { fontSize: 16, fontWeight: '700', color: '#111' },
-  meta: { marginTop: 2, fontSize: 13, color: '#5a6b87' },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  button: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
-  primary: { backgroundColor: '#2563eb' },
-  primaryText: { color: '#fff', fontWeight: '600' },
-  secondary: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#c9dcff' },
-  secondaryText: { color: '#2563eb', fontWeight: '600' },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 9,
+  },
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  statusText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  title: {
+    fontSize: 18.5,
+    fontWeight: '600',
+    marginBottom: 3,
+    letterSpacing: -0.4,
+  },
+  meta: {
+    fontSize: 13.5,
+    marginBottom: 15,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 9,
+  },
+  button: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryText: {
+    fontWeight: '700',
+    fontSize: 14.5,
+  },
+  secondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    flex: 0,
+    paddingHorizontal: 18,
+  },
+  secondaryText: {
+    fontWeight: '600',
+    fontSize: 14.5,
+  },
 });
+

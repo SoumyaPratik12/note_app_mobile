@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import type { NotePage } from '@/lib/types';
+import { useThemeStore, themeColors } from '@/stores/themeStore';
 
 interface Props {
   content: string;
   /**
    * Per-page metadata. Pages whose average OCR confidence is below
-   * `threshold` have their text underlined yellow to flag "trust this less".
-   * MVP highlights at page granularity; word-level highlighting is Phase 2.
+   * `threshold` have their text underlined to flag "trust this less".
    */
   pages?: Pick<NotePage, 'ocr_confidence' | 'raw_ocr_text'>[];
   threshold?: number;
@@ -15,9 +15,12 @@ interface Props {
 
 /**
  * Renders the joined note text. Spans of text that came from a low-confidence
- * page are underlined to build trust ("the OCR was unsure here").
+ * page are styled with a dashed underline.
  */
 export function ConfidenceHighlight({ content, pages, threshold = 0.8 }: Props) {
+  const theme = useThemeStore((s) => s.theme);
+  const colors = themeColors[theme];
+
   const lowConfidenceSnippets = useMemo(() => {
     if (!pages) return [];
     return pages
@@ -32,17 +35,26 @@ export function ConfidenceHighlight({ content, pages, threshold = 0.8 }: Props) 
   }, [pages, threshold]);
 
   if (lowConfidenceSnippets.length === 0) {
-    return <Text style={styles.body}>{content}</Text>;
+    return <Text style={[styles.body, { color: colors.ink }]}>{content}</Text>;
   }
 
   // Split the content around each low-confidence snippet and underline it.
   const segments = splitOnSnippets(content, lowConfidenceSnippets);
 
   return (
-    <Text style={styles.body}>
+    <Text style={[styles.body, { color: colors.ink }]}>
       {segments.map((seg, i) =>
         seg.lowConfidence ? (
-          <Text key={i} style={styles.lowConfidence}>
+          <Text 
+            key={i} 
+            style={[
+              styles.lowConfidence, 
+              { 
+                color: colors.low, 
+                textDecorationColor: colors.low,
+              }
+            ]}
+          >
             {seg.text}
           </Text>
         ) : (
@@ -85,10 +97,15 @@ function splitOnSnippets(content: string, snippets: string[]): Segment[] {
 }
 
 const styles = StyleSheet.create({
-  body: { fontSize: 16, lineHeight: 26, color: '#1a1a1a' },
+  body: { 
+    fontSize: 16.5, 
+    lineHeight: 28, 
+    fontWeight: '400',
+  },
   lowConfidence: {
+    fontWeight: '600',
     textDecorationLine: 'underline',
-    textDecorationColor: '#f1c40f',
-    backgroundColor: '#fef9e7',
+    textDecorationStyle: 'dashed',
   },
 });
+

@@ -10,11 +10,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
+import { useThemeStore, themeColors } from '@/stores/themeStore';
 
 interface SearchHit {
   id: string;
   title: string | null;
   snippet: string;
+  updated_at?: string;
+  page_count?: number;
 }
 
 export default function SearchScreen() {
@@ -23,6 +26,11 @@ export default function SearchScreen() {
   const [results, setResults] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout>>();
+
+  const theme = useThemeStore((s) => s.theme);
+  const colors = themeColors[theme];
+  const recentSearches = useThemeStore((s) => s.recentSearches);
+  const addSearchQuery = useThemeStore((s) => s.addSearchQuery);
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
@@ -36,12 +44,14 @@ export default function SearchScreen() {
   }, [query]);
 
   async function runSearch() {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) return;
+    
     setSearching(true);
-    // search_notes is a SECURITY DEFINER RPC defined in the schema migration;
-    // it runs a pg_trgm / full-text query scoped to auth.uid() and returns a
-    // highlighted snippet around the match.
+    addSearchQuery(trimmed);
+
     const { data, error } = await supabase.rpc('search_notes', {
-      q: query.trim(),
+      q: trimmed,
     });
     if (error) {
       console.warn('[search] failed:', error.message);
@@ -52,86 +62,265 @@ export default function SearchScreen() {
     setSearching(false);
   }
 
+  const hasResults = results.length > 0;
+  const showRecents = query.trim().length < 2;
+  const showEmpty = query.trim().length >= 2 && !searching && results.length === 0;
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.paper }]} edges={['top']}>
+      {/* Header Search Bar */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.back}>←</Text>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backButton}>
+          <View style={[styles.backArrow, { borderColor: colors.ink }]} />
         </Pressable>
-        <TextInput
-          style={styles.input}
-          placeholder="Search your notes…"
-          autoFocus
-          value={query}
-          onChangeText={setQuery}
-          returnKeyType="search"
-        />
+        
+        <View style={[styles.searchBar, { backgroundColor: colors.surface2, borderColor: colors.line }]}>
+          <View style={styles.searchIconWrapper}>
+            <View style={[styles.searchIconCircle, { borderColor: colors.ink3 }]} />
+            <View style={[styles.searchIconLine, { backgroundColor: colors.ink3 }]} />
+          </View>
+          <TextInput
+            style={[styles.input, { color: colors.ink }]}
+            placeholder="Search notes"
+            placeholderTextColor={colors.ink3}
+            autoFocus
+            value={query}
+            onChangeText={setQuery}
+            returnKeyType="search"
+            onSubmitEditing={runSearch}
+          />
+        </View>
       </View>
 
-      <FlatList
-        data={results}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => (
-          <Pressable
-            style={styles.hit}
-            onPress={() => router.push(`/note/${item.id}`)}
-          >
-            <Text style={styles.hitTitle} numberOfLines={1}>
-              {item.title?.trim() || 'Untitled note'}
-            </Text>
-            <Text style={styles.hitSnippet} numberOfLines={2}>
-              {item.snippet}
-            </Text>
-          </Pressable>
+      <View style={styles.content}>
+        {/* Recent Searches (Show when input is empty) */}
+        {showRecents && recentSearches.length > 0 && (
+          <View style={styles.recentsSection}>
+            <Text style={[styles.sectionTitle, { color: colors.ink3 }]}>Recent searches</Text>
+            <View style={styles.chipsContainer}>
+              {recentSearches.map((term, i) => (
+                <Pressable
+                  key={i}
+                  style={[styles.chip, { backgroundColor: colors.surface, borderColor: colors.line }]}
+                  onPress={() => setQuery(term)}
+                >
+                  <View style={[styles.clockIcon, { borderColor: colors.ink3 }]}>
+                    <View style={[styles.clockHour, { backgroundColor: colors.ink3 }]} />
+                    <View style={[styles.clockMinute, { backgroundColor: colors.ink3 }]} />
+                  </View>
+                  <Text style={[styles.chipText, { color: colors.ink }]}>{term}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
         )}
-        ListHeaderComponent={
-          results.length > 0 ? (
-            <Text style={styles.resultsLabel}>
-              Results for “{query.trim()}”
-            </Text>
-          ) : null
-        }
-        ListEmptyComponent={
-          query.trim().length >= 2 && !searching ? (
-            <Text style={styles.empty}>No matches.</Text>
-          ) : null
-        }
-      />
+
+        {/* Search Results List */}
+        {!showRecents && (
+          <FlatList
+            data={results}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.list}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <Pressable
+                style={[styles.hitCard, { backgroundColor: colors.surface, borderColor: colors.line, shadowColor: colors.shadow }]}
+                onPress={() => router.push(`/note/${item.id}`)}
+              >
+                <Text style={[styles.hitTitle, { color: colors.ink }]} numberOfLines={1}>
+                  {item.title?.trim() || 'Untitled note'}
+                </Text>
+                <Text style={[styles.hitSnippet, { color: colors.ink2 }]} numberOfLines={2}>
+                  {item.snippet}
+                </Text>
+              </Pressable>
+            )}
+            ListHeaderComponent={
+              hasResults ? (
+                <Text style={[styles.resultsLabel, { color: colors.ink3 }]}>
+                  Results for “{query.trim()}”
+                </Text>
+              ) : null
+            }
+            ListEmptyComponent={
+              showEmpty ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={[styles.emptyTitle, { color: colors.ink2 }]}>No matches</Text>
+                  <Text style={[styles.emptyText, { color: colors.ink3 }]}>Nothing found for "{query}"</Text>
+                </View>
+              ) : null
+            }
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingTop: 8,
+    paddingBottom: 12,
   },
-  back: { fontSize: 24, color: '#111' },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backArrow: {
+    width: 12,
+    height: 12,
+    borderLeftWidth: 2.4,
+    borderBottomWidth: 2.4,
+    transform: [{ rotate: '45deg' }],
+    marginLeft: 4,
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 46,
+    borderWidth: 1.5,
+    borderRadius: 13,
+    paddingHorizontal: 14,
+    gap: 9,
+  },
+  searchIconWrapper: {
+    width: 16,
+    height: 16,
+    position: 'relative',
+  },
+  searchIconCircle: {
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    borderWidth: 2,
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  searchIconLine: {
+    width: 2,
+    height: 5,
+    borderRadius: 0.5,
+    transform: [{ rotate: '-45deg' }],
+    position: 'absolute',
+    right: 1,
+    bottom: 1,
+  },
   input: {
     flex: 1,
-    backgroundColor: '#f1f1f3',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
+    fontSize: 16,
+    padding: 0,
   },
-  list: { padding: 16 },
-  resultsLabel: { color: '#999', fontSize: 13, marginBottom: 12, fontWeight: '600' },
-  hit: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#e2e2e2',
+  content: {
+    flex: 1,
   },
-  hitTitle: { fontSize: 15, fontWeight: '600', color: '#111' },
-  hitSnippet: { marginTop: 4, fontSize: 14, color: '#666' },
-  empty: { textAlign: 'center', color: '#999', marginTop: 40 },
+  recentsSection: {
+    paddingHorizontal: 22,
+    paddingTop: 6,
+  },
+  sectionTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginTop: 8,
+    marginBottom: 13,
+    marginLeft: 2,
+  },
+  chipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 9,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    height: 38,
+    paddingHorizontal: 15,
+    borderRadius: 19,
+    borderWidth: 1,
+  },
+  clockIcon: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1.2,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clockHour: {
+    width: 1.2,
+    height: 4,
+    borderRadius: 0.6,
+    position: 'absolute',
+    top: 2,
+  },
+  clockMinute: {
+    width: 4,
+    height: 1.2,
+    borderRadius: 0.6,
+    position: 'absolute',
+    right: 2,
+    top: 5,
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  list: { paddingHorizontal: 18, paddingTop: 6 },
+  resultsLabel: { 
+    fontSize: 12.5, 
+    fontWeight: '700', 
+    letterSpacing: 0.5,
+    textTransform: 'uppercase', 
+    marginBottom: 13,
+    marginLeft: 2,
+  },
+  hitCard: {
+    borderRadius: 16,
+    padding: 15,
+    marginBottom: 11,
+    borderWidth: 1,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  hitTitle: { 
+    fontSize: 16, 
+    fontWeight: '600', 
+    marginBottom: 6,
+    letterSpacing: -0.3,
+  },
+  hitSnippet: { 
+    fontSize: 14, 
+    lineHeight: 22,
+  },
+  emptyContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 6,
+    letterSpacing: -0.5,
+  },
+  emptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
 });
+

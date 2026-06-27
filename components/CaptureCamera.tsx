@@ -2,7 +2,6 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -11,7 +10,7 @@ import {
 import { CaptureGuideOverlay } from './CaptureGuideOverlay';
 
 interface Props {
-  /** Shown as a persistent banner (e.g. "Adding to: Physics notes · Page 4"). */
+  /** Shown as a persistent banner (e.g. "Physics notes · Page 4"). */
   bannerTitle?: string;
   bannerSubtitle?: string;
   /** Label for the secondary bottom-left action; omit to hide it. */
@@ -35,6 +34,7 @@ export function CaptureCamera({
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
 
   // Ask for permission automatically the first time the screen opens.
@@ -47,14 +47,14 @@ export function CaptureCamera({
   if (!permission) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator color="#fff" />
+        <ActivityIndicator color="#54c1a4" size="large" />
       </View>
     );
   }
 
   if (!permission.granted) {
     return (
-      <View style={[styles.container, styles.center]}>
+      <View style={[styles.container, styles.center, { backgroundColor: '#0e0d0a' }]}>
         <Text style={styles.permissionText}>
           InkSync needs camera access to photograph your notes.
         </Text>
@@ -71,6 +71,7 @@ export function CaptureCamera({
   async function capture() {
     if (busy || !ready || !cameraRef.current) return;
     setBusy(true);
+    setError(null);
     try {
       const photo = await cameraRef.current.takePictureAsync({
         base64: true,
@@ -85,7 +86,7 @@ export function CaptureCamera({
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
     } catch (e) {
-      Alert.alert('Capture failed', (e as Error).message || 'Unknown error.');
+      setError((e as Error).message || 'Something went wrong');
     } finally {
       setBusy(false);
     }
@@ -100,104 +101,276 @@ export function CaptureCamera({
         flash={flash}
         onCameraReady={() => setReady(true)}
       />
-      <CaptureGuideOverlay />
+      
+      {/* Interactive scanning corners overlay */}
+      <CaptureGuideOverlay isProcessing={busy} />
 
+      {/* Top Bar controls */}
       <View style={styles.topBar}>
-        <Pressable onPress={onClose} hitSlop={12} disabled={busy}>
-          <Text style={styles.close}>✕</Text>
+        <Pressable 
+          onPress={onClose} 
+          hitSlop={12} 
+          disabled={busy}
+          style={styles.circleBtn}
+          aria-label="Close"
+        >
+          <View style={styles.closeIcon}>
+            <View style={[styles.closeLine, { transform: [{ rotate: '45deg' }] }]} />
+            <View style={[styles.closeLine, { transform: [{ rotate: '-45deg' }] }]} />
+          </View>
+        </Pressable>
+
+        <Pressable 
+          onPress={() => setFlash((f) => (f === 'off' ? 'on' : 'off'))} 
+          style={[styles.circleBtn, flash === 'on' && styles.circleBtnActive]}
+          disabled={busy}
+          aria-label="Flash"
+        >
+          <Text style={styles.flashEmoji}>⚡</Text>
         </Pressable>
       </View>
 
+      {/* Banner indicator */}
       {bannerTitle ? (
         <View style={styles.banner}>
-          <Text style={styles.bannerTitle}>➕ {bannerTitle}</Text>
-          {bannerSubtitle ? (
-            <Text style={styles.bannerSubtitle}>{bannerSubtitle}</Text>
-          ) : null}
+          <View style={styles.bannerDot} />
+          <Text style={styles.bannerTitle}>
+            Adding to: {bannerTitle} {bannerSubtitle ? `· ${bannerSubtitle}` : ''}
+          </Text>
         </View>
       ) : null}
 
-      {/* Processing / success overlay — gives feedback during upload + OCR. */}
-      {busy ? (
-        <View style={styles.processing} pointerEvents="auto">
-          <ActivityIndicator color="#fff" size="large" />
+      {/* Overlays */}
+      {/* 1. Processing State */}
+      {busy && (
+        <View style={styles.scrimOverlay} pointerEvents="auto">
+          <ActivityIndicator color="#54c1a4" size="large" />
           <Text style={styles.processingText}>Reading your page…</Text>
         </View>
-      ) : null}
-      {savedFlash && !busy ? (
-        <View style={styles.processing} pointerEvents="none">
-          <Text style={styles.savedText}>✓ Page added</Text>
+      )}
+
+      {/* 2. Page Added Success State */}
+      {savedFlash && !busy && (
+        <View style={styles.scrimOverlay} pointerEvents="none">
+          <View style={styles.successCircle}>
+            <View style={styles.checkIcon}>
+              <View style={[styles.checkPart1, { backgroundColor: '#0c1512' }]} />
+              <View style={[styles.checkPart2, { backgroundColor: '#0c1512' }]} />
+            </View>
+          </View>
+          <Text style={styles.successText}>Page added</Text>
         </View>
-      ) : null}
+      )}
 
-      <View style={styles.bottomBar}>
-        {secondaryActionLabel ? (
-          <Pressable onPress={onSecondaryAction} style={styles.secondary} disabled={busy}>
-            <Text style={styles.secondaryText}>{secondaryActionLabel}</Text>
-          </Pressable>
-        ) : (
-          <View style={styles.secondary} />
-        )}
+      {/* 3. Custom Error State */}
+      {error && !busy && (
+        <View style={styles.scrimOverlay} pointerEvents="auto">
+          <View style={styles.errorCircle}>
+            <Text style={styles.errorExclamation}>!</Text>
+          </View>
+          <Text style={styles.errorTitle}>Couldn't read this page</Text>
+          <Text style={styles.errorDesc}>Try better lighting and hold the camera steady.</Text>
+          
+          <View style={styles.errorActions}>
+            <Pressable style={styles.errorBtnSecondary} onPress={onClose}>
+              <Text style={styles.errorBtnSecondaryText}>Cancel</Text>
+            </Pressable>
+            <Pressable style={styles.errorBtnPrimary} onPress={capture}>
+              <Text style={styles.errorBtnPrimaryText}>Retry</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
-        <Pressable
-          style={[styles.shutter, (!ready || busy) && styles.shutterDisabled]}
-          onPress={capture}
-          disabled={busy || !ready}
-        >
-          {busy ? (
-            <ActivityIndicator color="#111" />
+      {/* Bottom controls */}
+      {!busy && !savedFlash && !error && (
+        <View style={styles.bottomBar}>
+          {secondaryActionLabel ? (
+            <Pressable onPress={onSecondaryAction} style={styles.secondaryBtn} disabled={busy}>
+              <Text style={styles.secondaryBtnText}>{secondaryActionLabel}</Text>
+            </Pressable>
           ) : (
-            <Text style={styles.shutterText}>{ready ? 'Capture' : 'Starting…'}</Text>
+            <View style={styles.secondaryBtn} />
           )}
-        </Pressable>
 
-        <Pressable
-          onPress={() => setFlash((f) => (f === 'off' ? 'on' : 'off'))}
-          style={styles.secondary}
-          disabled={busy}
-        >
-          <Text style={styles.secondaryText}>Flash: {flash === 'off' ? 'Off' : 'On'}</Text>
-        </Pressable>
-      </View>
+          <Pressable
+            style={[styles.shutterBtn, (!ready || busy) && styles.shutterBtnDisabled]}
+            onPress={capture}
+            disabled={busy || !ready}
+            aria-label="Capture"
+          >
+            <View style={styles.shutterBtnInner} />
+          </Pressable>
+
+          <View style={styles.secondaryBtn} />
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#0c0b09' },
   center: { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 },
-  permissionText: { color: '#fff', textAlign: 'center', fontSize: 16 },
+  permissionText: { color: '#fff', textAlign: 'center', fontSize: 16, fontWeight: '500' },
   permissionButton: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 10,
+    backgroundColor: '#1f6f5c',
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    borderRadius: 12,
   },
   permissionButtonText: { color: '#fff', fontWeight: '600' },
-  cancel: { color: '#aaa', marginTop: 8 },
-  topBar: { position: 'absolute', top: 50, left: 20 },
-  close: { color: '#fff', fontSize: 26, fontWeight: '600' },
-  banner: {
-    position: 'absolute',
-    top: 96,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
+  cancel: { color: 'rgba(255,255,255,0.6)', marginTop: 8, fontSize: 15 },
+  topBar: { 
+    position: 'absolute', 
+    top: 50, 
+    left: 18, 
+    right: 18,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    zIndex: 10,
+  },
+  circleBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  circleBtnActive: {
+    backgroundColor: 'rgba(84, 193, 164, 0.3)',
+  },
+  closeIcon: {
+    width: 16,
+    height: 16,
+    position: 'relative',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  bannerTitle: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  bannerSubtitle: { color: '#d6e4ff', marginTop: 2, fontSize: 13 },
-  processing: {
+  closeLine: {
+    width: 16,
+    height: 2,
+    backgroundColor: '#fff',
+    borderRadius: 1,
+    position: 'absolute',
+  },
+  flashEmoji: {
+    fontSize: 16,
+    color: '#fff',
+  },
+  banner: {
+    position: 'absolute',
+    top: 110,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(84, 193, 164, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(84, 193, 164, 0.4)',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    zIndex: 10,
+  },
+  bannerDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#54c1a4',
+  },
+  bannerTitle: { color: '#dfeee8', fontWeight: '600', fontSize: 13.5 },
+  scrimOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(20, 18, 14, 0.75)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
+    zIndex: 20,
+    padding: 24,
   },
-  processingText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  savedText: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  processingText: { 
+    color: '#fff', 
+    fontSize: 16, 
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  successCircle: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#54c1a4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successText: { 
+    color: '#fff', 
+    fontSize: 16.5, 
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  errorCircle: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(178, 59, 46, 0.18)',
+    borderWidth: 1.5,
+    borderColor: '#d8564a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorExclamation: {
+    color: '#f0a59c',
+    fontSize: 26,
+    fontWeight: '700',
+  },
+  errorTitle: {
+    color: '#fff',
+    fontSize: 15.5,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  errorDesc: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 13,
+    textAlign: 'center',
+    maxWidth: 250,
+    marginTop: -6,
+    lineHeight: 18,
+  },
+  errorActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  errorBtnSecondary: {
+    height: 44,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorBtnSecondaryText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14.5,
+  },
+  errorBtnPrimary: {
+    height: 44,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: '#54c1a4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorBtnPrimaryText: {
+    color: '#0c1512',
+    fontWeight: '700',
+    fontSize: 14.5,
+  },
   bottomBar: {
     position: 'absolute',
     bottom: 48,
@@ -207,17 +380,64 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
+    zIndex: 10,
   },
-  shutter: {
+  shutterBtn: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    borderWidth: 5,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
+  },
+  shutterBtnDisabled: { opacity: 0.5 },
+  shutterBtnInner: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: '#fff',
-    paddingHorizontal: 28,
-    paddingVertical: 18,
-    borderRadius: 40,
-    minWidth: 120,
+  },
+  secondaryBtn: { 
+    width: 100, 
+    justifyContent: 'center',
+  },
+  secondaryBtnText: { 
+    color: '#fff', 
+    fontSize: 14.5,
+    fontWeight: '600',
+    opacity: 0.85,
+  },
+  checkIcon: {
+    width: 20,
+    height: 20,
+    position: 'relative',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  shutterDisabled: { opacity: 0.5 },
-  shutterText: { color: '#111', fontWeight: '700', fontSize: 16 },
-  secondary: { width: 90 },
-  secondaryText: { color: '#fff', fontSize: 13 },
+  checkPart1: {
+    position: 'absolute',
+    width: 3.5,
+    height: 10,
+    borderRadius: 1.7,
+    transform: [{ rotate: '-45deg' }],
+    left: 2,
+    bottom: 3,
+  },
+  checkPart2: {
+    position: 'absolute',
+    width: 3.5,
+    height: 17,
+    borderRadius: 1.7,
+    transform: [{ rotate: '45deg' }],
+    right: 2,
+    bottom: 5,
+  },
 });
+

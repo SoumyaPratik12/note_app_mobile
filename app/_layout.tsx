@@ -4,6 +4,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from '@/stores/authStore';
+import { useThemeStore, themeColors } from '@/stores/themeStore';
 import { registerForPushNotifications } from '@/lib/notifications';
 
 export default function RootLayout() {
@@ -12,6 +13,8 @@ export default function RootLayout() {
   const initializing = useAuthStore((s) => s.initializing);
   const segments = useSegments();
   const router = useRouter();
+  const theme = useThemeStore((s) => s.theme);
+  const colors = themeColors[theme];
 
   // Wire up Supabase auth once.
   useEffect(() => init(), [init]);
@@ -38,19 +41,22 @@ export default function RootLayout() {
 
   if (initializing) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paper }}>
+        <ActivityIndicator color={colors.accent} />
       </View>
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(app)" />
-      </Stack>
+    <SafeAreaProvider style={{ backgroundColor: colors.paper }}>
+      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+      <View style={{ flex: 1, backgroundColor: colors.paper }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.paper } }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(app)" />
+        </Stack>
+      </View>
     </SafeAreaProvider>
   );
 }
+
