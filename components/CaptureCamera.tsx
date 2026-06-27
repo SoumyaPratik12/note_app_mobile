@@ -170,6 +170,7 @@ export function CaptureCamera({
           </View>
           <Text style={styles.errorTitle}>Couldn't read this page</Text>
           <Text style={styles.errorDesc}>Try better lighting and hold the camera steady.</Text>
+          <Text style={styles.errorDetails}>({error})</Text>
           
           <View style={styles.errorActions}>
             <Pressable style={styles.errorBtnSecondary} onPress={onClose}>
@@ -338,6 +339,14 @@ const styles = StyleSheet.create({
     maxWidth: 250,
     marginTop: -6,
     lineHeight: 18,
+  },
+  errorDetails: {
+    color: 'rgba(255, 255, 255, 0.38)',
+    fontSize: 11,
+    textAlign: 'center',
+    maxWidth: 240,
+    marginTop: 2,
+    lineHeight: 15,
   },
   errorActions: {
     flexDirection: 'row',
