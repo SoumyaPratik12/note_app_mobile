@@ -187,9 +187,12 @@ async function getGoogleAccessToken(): Promise<string> {
   );
   const unsigned = `${header}.${claims}`;
 
+  // Replace escaped newlines with actual newlines if set via CLI.
+  const privateKey = sa.private_key.replace(/\\n/g, '\n');
+
   const key = await crypto.subtle.importKey(
     'pkcs8',
-    pemToDer(sa.private_key),
+    pemToDer(privateKey),
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false,
     ['sign'],

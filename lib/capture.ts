@@ -38,8 +38,24 @@ export async function capturePage(args: {
     },
   );
 
-  if (error || !data) {
-    throw new Error(`OCR processing failed: ${error?.message ?? 'unknown'}`);
+  if (error) {
+    let msg = error.message;
+    try {
+      if ('context' in error && error.context) {
+        const body = await (error.context as any).json();
+        if (body && (body.message || body.error)) {
+          msg = body.message || body.error;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(`OCR processing failed: ${msg}`);
   }
+
+  if (!data) {
+    throw new Error('OCR processing failed: No data returned.');
+  }
+
   return data;
 }
