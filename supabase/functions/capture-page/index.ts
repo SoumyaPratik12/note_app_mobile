@@ -63,9 +63,27 @@ Deno.serve(async (req) => {
     }
     const imageBase64 = encodeBase64(await blob.arrayBuffer());
 
-    // 2. OCR via Google Cloud Vision (service-account Bearer auth).
-    const accessToken = await getGoogleAccessToken();
-    const { rawText, avgConfidence } = await runVision(accessToken, imageBase64);
+    // 2. OCR via Google Cloud Vision or Anthropic Claude Vision fallback.
+    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
+    let rawText = '';
+    let avgConfidence = 0.95;
+
+    try {
+      const accessToken = await getGoogleAccessToken();
+      const visionResult = await runVision(accessToken, imageBase64);
+      rawText = visionResult.rawText;
+      avgConfidence = visionResult.avgConfidence;
+    } catch (googleError) {
+      console.warn('Google Vision OCR failed:', (googleError as Error).message);
+      if (anthropicKey) {
+        console.info('Using Claude Vision OCR fallback...');
+        const claudeResult = await runClaudeVision(anthropicKey, imageBase64);
+        rawText = claudeResult.rawText;
+        avgConfidence = claudeResult.avgConfidence;
+      } else {
+        throw googleError;
+      }
+    }
     const cleanText = postProcessOCR(rawText);
 
     // 3. Current note state.
@@ -271,6 +289,40 @@ async function runVision(
     : 1;
 
   return { rawText, avgConfidence };
+}
+
+async function runClaudeVision(
+  apiKey: string,
+  imageBase64: string,
+): Promise<{ rawText: string; avgConfidence: number }> {
+  const anthropic = new Anthropic({ apiKey });
+  const message = await anthropic.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 2048,
+    system:
+      'You are a high-accuracy OCR assistant specialized in handwritten notes. ' +
+      'Transcribe the text in the image exactly. Return ONLY the transcribed text ' +
+      'without any introductions, formatting wrappers, quotes, or markdown code blocks.',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/jpeg',
+              data: imageBase64,
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const block = message.content.find((b) => b.type === 'text');
+  const rawText = block && block.type === 'text' ? block.text : '';
+  return { rawText, avgConfidence: 0.95 };
 }
 
 function postProcessOCR(text: string): string {
