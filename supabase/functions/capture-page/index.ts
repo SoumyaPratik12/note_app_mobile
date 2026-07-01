@@ -100,7 +100,6 @@ Deno.serve(async (req) => {
 
     // 4. Stitch the new page onto the existing content. The Anthropic key is
     // OPTIONAL: with it we AI-repair the seam; without it we newline-join.
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
     let finalText = cleanText;
     let repairedJunction: string | null = null;
     let originalTail: string | null = null;
